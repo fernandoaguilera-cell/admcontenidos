@@ -87,18 +87,43 @@ public class FacialRecognitionController {
      * Guarda un archivo subido en el sistema de archivos
      */
     private String saveUploadedFile(MultipartFile file) throws IOException {
-        String fileName = System.currentTimeMillis() + "_" + file.getOriginalFilename();
-        Path filePath = Paths.get(UPLOAD_DIR + fileName);
+        // Sanitizar el nombre del archivo para prevenir path traversal
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || originalFilename.isEmpty()) {
+            originalFilename = "upload";
+        }
+        // Remover cualquier caracter de path y mantener solo el nombre del archivo
+        String sanitizedFilename = originalFilename.replaceAll("[^a-zA-Z0-9\\.\\-]", "_");
+        String fileName = System.currentTimeMillis() + "_" + sanitizedFilename;
+        
+        // Crear path seguro dentro del directorio de uploads
+        Path uploadDir = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
+        Path filePath = uploadDir.resolve(fileName).normalize();
+        
+        // Verificar que el archivo resultante está dentro del directorio de uploads
+        if (!filePath.startsWith(uploadDir)) {
+            throw new SecurityException("Path traversal attempt detected");
+        }
+        
         Files.write(filePath, file.getBytes());
         return filePath.toString();
     }
 
     /**
-     * Elimina un archivo del sistema de archivos
+     * Elimina un archivo del sistema de archivos de forma segura
      */
     private void deleteFile(String filePath) {
         try {
-            Files.deleteIfExists(Paths.get(filePath));
+            Path path = Paths.get(filePath).toAbsolutePath().normalize();
+            Path uploadDir = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
+            
+            // Verificar que el archivo está dentro del directorio de uploads
+            if (!path.startsWith(uploadDir)) {
+                System.err.println("Intento de eliminar archivo fuera del directorio de uploads: " + filePath);
+                return;
+            }
+            
+            Files.deleteIfExists(path);
         } catch (IOException e) {
             System.err.println("Error al eliminar archivo: " + filePath);
         }
